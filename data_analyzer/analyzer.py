@@ -26,7 +26,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from data_analyzer.sentiment import load_finbert, analyze as score_text
+from data_analyzer.sentiment import load_finbert, analyze as score_text  # noqa: F401
 from database.db import get_connection, insert_sentiment, get_sentiments_by_ticker
 
 # Import the shared queue from the collector (may not exist in test/standalone mode).
