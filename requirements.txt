@@ -3,7 +3,7 @@ flask==3.0.3
 fastapi==0.111.0
 uvicorn==0.30.1
 transformers==4.41.2
-torch==2.3.1
+torch==2.12.0
 yfinance==0.2.40
 newsapi-python==0.2.7
 psycopg2-binary==2.9.9
