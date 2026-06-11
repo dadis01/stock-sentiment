@@ -25,15 +25,14 @@ def load_finbert() -> Pipeline:
     """
     global _finbert_pipeline
     if _finbert_pipeline is None:
-        logger.info("Loading ProsusAI/finbert model — this may take a moment on first run.")
+        logger.info("Loading mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis — this may take a moment on first run.")
         try:
             _finbert_pipeline = pipeline(
                 "text-classification",
-                model="ProsusAI/finbert",
-                tokenizer="ProsusAI/finbert",
+                model="mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis",
                 top_k=1,
             )
-            logger.info("FinBERT model loaded successfully.")
+            logger.info("Sentiment model loaded successfully.")
         except Exception as exc:
             logger.error(f"Failed to load FinBERT: {exc}")
             raise
