@@ -18,7 +18,6 @@ from pathlib import Path
 from PIL import Image
 import pandas as pd
 import plotly.graph_objects as go
-import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
@@ -33,7 +32,6 @@ from database.db import (
 
 load_dotenv()
 
-ANALYZER_URL = os.getenv("ANALYZER_URL", "http://localhost:8000")
 TICKERS = ["AAPL", "TSLA", "GOOGL", "MSFT", "AMZN"]
 
 # ---------------------------------------------------------------------------
@@ -128,18 +126,19 @@ with col1:
 
 with col2:
     if st.button("Analyze now"):
-        """
-        Trigger on-demand analysis for the most recent unanalyzed article
-        of the selected ticker by POSTing to /analyze.
-        """
-        # Find the latest article_id for this ticker that has no sentiment yet.
         try:
             from database.db import get_connection
+            from data_analyzer.sentiment import load_finbert, analyze as score_text
+            from database.db import insert_sentiment
+            import yfinance as yf
+
+            load_finbert()
+
             with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT a.id FROM articles a
+                        SELECT a.id, a.headline FROM articles a
                         LEFT JOIN sentiments s ON s.article_id = a.id
                         WHERE a.ticker = %s AND s.id IS NULL
                         ORDER BY a.created_at DESC
@@ -150,25 +149,27 @@ with col2:
                     row = cur.fetchone()
 
             if row:
-                article_id = row[0]
-                resp = requests.post(
-                    f"{ANALYZER_URL}/analyze",
-                    json={"article_id": article_id},
-                    timeout=30,
+                article_id, headline = row
+                result = score_text(headline)
+                label, score = result["label"], result["score"]
+                price = 0.0
+                try:
+                    hist = yf.Ticker(selected_ticker).history(period="5d")
+                    if not hist.empty:
+                        price = float(hist["Close"].iloc[-1])
+                except Exception:
+                    pass
+                insert_sentiment(article_id, selected_ticker, label, score, price)
+                st.success(
+                    f"Article {article_id} → {label} "
+                    f"(score {score:.3f}, price ${price:.2f})"
                 )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    st.success(
-                        f"Article {article_id} → {data['label']} "
-                        f"(score {data['score']:.3f}, price ${data['price']:.2f})"
-                    )
-                else:
-                    st.error(f"Analyzer returned {resp.status_code}: {resp.text}")
+                st.rerun()
             else:
                 st.info(f"No unanalyzed articles found for {selected_ticker}.")
         except Exception as exc:
             logger.error(f"Analyze now failed: {exc}")
-            st.error(f"Error contacting analyzer: {exc}")
+            st.error(f"Analysis error: {exc}")
 
 with col3:
     if st.button("Refresh data"):
@@ -313,15 +314,22 @@ try:
 except Exception:
     total_analyzed = "N/A"
 
-# System health
+# System health — check DB directly (analyzer runs as separate dyno)
 try:
-    health_resp = requests.get(f"{ANALYZER_URL}/health", timeout=5)
-    health_data = health_resp.json() if health_resp.status_code == 200 else {}
-    health_status = health_data.get("status", "unknown").upper()
-    queue_size = health_data.get("queue_size", "?")
-    health_display = f"{health_status} (queue: {queue_size})"
+    from database.db import get_connection as _hc
+    with _hc() as _conn:
+        with _conn.cursor() as _cur:
+            _cur.execute(
+                """
+                SELECT COUNT(*) FROM articles a
+                LEFT JOIN sentiments s ON s.article_id = a.id
+                WHERE s.id IS NULL;
+                """
+            )
+            pending = _cur.fetchone()[0]
+    health_display = f"OK (pending: {pending})"
 except Exception:
-    health_display = "UNREACHABLE"
+    health_display = "DB ERROR"
 
 # Latest price for selected ticker
 try:
